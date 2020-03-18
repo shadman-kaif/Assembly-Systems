@@ -80,51 +80,139 @@ EXIT_IRQ:
     		SUBS PC, LR, #4				
 
 		.global	KEY_ISR				
-
-KEY_ISR:	LDR R0, =RUN				
+								
+KEY_ISR:	LDR R1, =0xff20005c
+		LDR R1, [R1]
+				
+		//check the state of KEY0 by extracting the first bit				
+		MOV R2, R1
+		AND R2, #1
+		CMP R1, #1
+		BNE SLOW_DOWN
+		LDR R0, =RUN				
 		LDR R0, [R0]
 		CMP R0, #1
 		BNE CHANGE_TO_ONE
 		MOV R1, #0
 		LDR R0, =RUN				
-		STR R1, [R0]								
+		STR R1, [R0]
+		B GO_BACK
 
-DONE:		LDR R0, =0xFF20005C	// base address of pushbutton KEY port
+SLOW_DOWN:		MOV R2, R1		//check key 1
+		AND R2, #2
+		CMP R1, #2
+		BNE FASTER_RATE
+		PUSH {R0-R5}
+		LDR	R0, =0xFF202000
+		
+		//clear the interrupt
+		MOV		R1, #0x1
+		STR		R1, [R0]
+				
+		LDR	R1, [R0,#0x8]				
+		LDR	R2, [R0,#0xC]	//needs to be left shifted 64 times			
+				
+		MOV	R3, #0b1000
+		STR	R3, [R0,#0x4] //stop the timer				
+				
+		MOV	R3, #0b0011
+		STR	R3, [R0, #0x4] //stop state				
+								
+		LSL R2, #16 				 
+		ORR R2, R1
+		//right shift to reduce the time
+		LSR R2, #1
+		MOV R3, R2
+		//extract the high word
+		LDR R5, =0xFFFF0000
+		AND R2, R5 //r2 now has the high word to be stored in base + 0xc
+		LSR R2, #16
+		STR R2, [R0, #0xc]
+		//extract the low word
+		LDR R5, =0xFFFF
+		AND R3, R5
+		STR R3, [R0, #0x8] //store it				
+		//start it (the timer)
+		MOV		R1, #0b111
+		STR		R1, [R0,#0x4]	
+		POP {R0 -R5}
+		B GO_BACK
+
+FASTER_RATE:	MOV R2, R1		//check key 1
+		AND R2, #4
+		CMP R1, #4
+		BNE GO_BACK
+		PUSH {R0-R4}
+		LDR	R0, =0xFF202000
+				
+		//clear the interrupt
+		MOV		R1, #0x1
+		STR		R1, [R0]
+				
+		LDR R1, [R0,#0x8]				
+		LDR R2, [R0,#0xC]	//needs to be left shifted 64 times			
+				
+		MOV R3, #0b1000
+		STR R3, [R0,#0x4] //stop the timer				
+				
+		MOV R3, #0b0011
+		STR R3, [R0, #0x4] //stop state				
+								
+		LSL R2, #16 				 
+		ORR R2, R1
+		//left shift to increase the time
+		LSL R2, #1
+		MOV R3, R2
+		//extract the high word
+		LDR R4, =0xFFFF0000
+		AND R2, R4 //r2 now has the high word to be stored in base + 0xc
+		LSR R2, #16
+		STR R2, [R0, #0xc]
+		//extract the low word
+		LDR R4, =0xFFFF
+		AND R3, R4
+		STR R3, [R0, #0x8] //store it				
+		//start it (the timer)
+		MOV R1, #0b111
+		STR R1, [R0,#0x4]	
+		POP {R0 - R4}	
+		B GO_BACK
+
+GO_BACK:	LDR R0, =0xFF20005C   // base address of pushbutton KEY port
 		MOV R2, #0xF
 		STR R2, [R0]				
-		MOV PC, LR		// return
+		MOV PC, LR	      // return
 
 CHANGE_TO_ONE:	MOV R1, #1
 		LDR R0, =RUN
 		STR R1, [R0]
-		B DONE
+		B GO_BACK
 
-TIMER_ISR:    	PUSH {R0-R5}	//acknowledge interrupt				
+TIMER_ISR:    	PUSH {R0-R5}	    //acknowledge interrupt				
 		LDR R1, =COUNT
 		LDR R2, =RUN
-		LDR R1, [R1]	//r1 has the count
-		LDR R2,	[R2] 	//r2 has the run
-		ADD R1, R2	// add r1 and r2
+		LDR R1, [R1]        //r1 has the count
+		LDR R2,	[R2] 	    //r2 has the run
+		ADD R1, R2	    // add r1 and r2
 		LDR R0, =COUNT		
 		STR R1, [R0]
-		LDR R0, =0xFF202000	// base address of interval timer port
+		LDR R0, =0xFF202000  // base address of interval timer port
 		MOV R1, #0x1
-		STR R1, [R0]	     	// clear the interrupt				
+		STR R1, [R0]         // clear the interrupt				
 		POP {R0-R5}
 		MOV PC, LR
 
 
 CONF_TIMER: 	PUSH {R0, R1}
-				LDR		R0, =0xFF202000
-				LDR		R1, =0x7840
-				STR		R1, [R0,#0x8]
-				LDR		R1, =0x017D
-				STR		R1, [R0,#0xC]
-				MOV		R1, #0b111
-				STR		R1, [R0,#0x4]										
-				POP {R0, R1}				
-				MOV PC, LR
-
+		LDR R0, =0xFF202000
+		LDR R1, =0x7840
+		STR R1, [R0,#0x8]
+		LDR R1, =0x017D
+		STR R1, [R0,#0xC]
+		MOV R1, #0b111
+		STR R1, [R0,#0x4]										
+		POP {R0, R1}				
+		MOV PC, LR
 
 SEG: 	   	PUSH {R1}
 			LDR     R1, =BIT_CODES  
@@ -138,7 +226,7 @@ BIT_CODES:  .byte   0b00111111, 0b00000110, 0b01011011, 0b01001111, 0b01100110
             .byte   0b01101101, 0b01111101, 0b00000111, 0b01111111, 0b01100111
             .skip   2      // pad with 2 bytes to maintain word alignment				
 
-DISPLAY:    PUSH {R0, R1, R9, R8, R7} 
+DISPLAY:    PUSH {R0, R1, R9, R8, R7} //push for sanity
 			LDR R12, =0xFF200020 // base address of HEX3-HEX0			
 			MOV R7, R0 //temporarily store R0
 			PUSH {LR}
@@ -155,7 +243,7 @@ DISPLAY:    PUSH {R0, R1, R9, R8, R7}
 			
 			STR R0, [R12]
 			POP {LR}
-			POP {R0, R1, R9, R8, R7} 
+			POP {R0, R1, R9, R8, R7} //pop for sanity
 			MOV PC, LR
 
 DIVIDE:    PUSH {R2}
@@ -168,6 +256,8 @@ CONTD:      CMP    R0, #10
 DIV_END:    MOV    R1, R2     // quotient in R1 (remainder in R0)
 			POP {R2}
             MOV    PC, LR
+
+            		
 
 /* FPGA interrupts (there are 64 in total; only a few are defined below) */
 			.equ	INTERVAL_TIMER_IRQ, 			72
